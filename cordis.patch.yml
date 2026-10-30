@@ -1,0 +1,7 @@
+# dsh-sidebar-layout —— bundle patch
+#
+# 只插入一条宿主入口。界面全部来自 lib/client.js（web 侧 slot 注册 + DOM 显示层），
+# 宿主半边是空操作（见 lib/index.js）。没有任何配置项。
+- insert:
+    - id: dsh-sidebar-layout
+      name: dsh-sidebar-layout

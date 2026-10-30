@@ -1,0 +1,50 @@
+{
+  "name": "dsh-sidebar-layout",
+  "version": "0.1.5",
+  "type": "module",
+  "description": "把 DSH 左侧栏的插件入口变成可滚动、可拖动排序、可拖动调高、可逐个显隐的窗口，减少入口对工作区会话列表的挤占。",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "sidebar",
+    "layout"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yu-jianhai/dsh-sidebar-layout.git"
+  },
+  "homepage": "https://github.com/Yu-jianhai/dsh-sidebar-layout#readme",
+  "bugs": {
+    "url": "https://github.com/Yu-jianhai/dsh-sidebar-layout/issues"
+  },
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "engines": {
+      "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
