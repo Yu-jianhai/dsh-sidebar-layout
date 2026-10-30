@@ -1,7 +1,13 @@
 # 侧栏布局 · dsh-sidebar-layout
 
+[![version](https://img.shields.io/badge/version-0.1.6-blue)](https://github.com/Yu-jianhai/dsh-sidebar-layout/releases)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![platform](https://img.shields.io/badge/DSH-0.2.x-black)](https://github.com/Yu-jianhai)
+
 > DSH 左侧栏插件入口的整理器：可滚动、可拖动排序、可拖动调高、可逐个显隐。
 > 把被入口吃掉的高度，还给工作区的会话列表。
+
+*[English](#english) below.*
 
 ## 痛点
 
@@ -41,6 +47,9 @@ DSH 的左侧栏入口是**固定高度的一整列**，每个入口一行 36px 
 **不改宿主宽度、不改宿主滚动条**：滚动条样式完全继承宿主（`--dsh-scrollbar-width`，5px），
 插件只做横向对齐补偿，让列表滚动条与会话列表那条落在同一竖线上；拖动手柄的尺寸也不动。
 
+**设置页自带兜底**：万一设置页在某个 DSH 版本上渲染失败，页面会画出错误文本与 `__dsl` 排查提示，
+而不是留一片空白——故障可诊断，侧栏本身也不受影响。
+
 ## 安装
 
 这是一个 **DSH 插件包**（`dsh` 字段声明了客户端入口与 bundle patch），安装方式与其它本地插件一致：
@@ -58,6 +67,9 @@ DSH 的左侧栏入口是**固定高度的一整列**，每个入口一行 36px 
 **DSH 的 hmr 若是关闭的**，装或改之后需要重启 DSH 才生效。
 
 无构建步骤：`lib/client.js` 直接是 `window.__ModuleLoader__.load({…})` 形态的客户端 bundle，无需打包。
+
+装好之后有两个入口能到设置：**设置 → 侧栏布局**（左侧导航里，靠近底部的「侧栏布局」一页），
+以及**侧栏底部那枚三条横线的图标**（浮层里是同一套开关）。
 
 ## 设计边界
 
@@ -84,7 +96,7 @@ DSH 的左侧栏入口是**固定高度的一整列**，每个入口一行 36px 
 
 ```bash
 node --check lib/client.js
-node test/boot-smoke.mjs   # 最小 DOM 桩：注册 / 找 nav / 落偏好 / 卸载还原
+node test/boot-smoke.mjs   # 最小 DOM 桩：注册 / 找 nav / 落偏好 / 设置页能渲染 / 卸载还原
 ```
 
 ## 卸载
@@ -94,11 +106,64 @@ node test/boot-smoke.mjs   # 最小 DOM 桩：注册 / 找 nav / 落偏好 / 卸
 
 ## English
 
-`dsh-sidebar-layout` turns the DSH left sidebar's plugin-entry column into a bounded, scrollable,
-reorderable and individually hideable window. Entries used to reserve a fixed ~348px for eight plugins,
-squeezing the workspace session list; now the column only takes as many rows as you allow, and the rest
-scrolls inside the window. Drag to reorder, drag the bottom edge to resize, toggle entries per entry.
+**dsh-sidebar-layout** turns the DSH left sidebar's plugin-entry column into a bounded, scrollable,
+reorderable, individually hideable window — and gives the reclaimed height back to the workspace
+session list.
+
+### The problem
+
+The left sidebar's entry column has a fixed row height (36px + 2px gap per entry). Every plugin that
+contributes a sidebar entry makes the column one row taller. With eight entries the column reserves
+about 348px of permanent vertical space; since the sidebar's total height is finite, that space is
+taken from the session list below it. The host's only relief valve is the "More" menu's unpin action,
+which is not persisted, resets on reload, and can never hide the built-in Plugins entry.
+
+### What it does
+
+- **Bounded scrolling** — the entry list takes only the rows you allow (3 at minimum, up to one row per
+  entry); the rest scrolls inside the window instead of expanding the column.
+- **Drag to reorder** — grab the handle that appears at a row's trailing edge; the order is persisted.
+  The settings page also offers ↑ / ↓ for keyboard users.
+- **Drag to resize** — hover the bottom edge of the list to reveal a resize zone; drag to change the
+  visible row count, double-click to restore "unlimited".
+- **Show / hide per entry** — Settings → 侧栏布局, or the sidebar-footer button; hidden entries are
+  removed from view while keeping their position.
+- **The row cap follows the entry count** — you can never drag out empty space; once the window shows
+  "all N rows", installing another sidebar plugin grows it by one row. A cap you set smaller yourself is
+  respected: new entries are appended at the end and stay outside the scroll window.
+- **Compact density (experimental)** — 36px → 28px rows.
+
+### Install
+
+This is a DSH plugin package (`dsh.client` + `dsh.bundle.patch`). Add it to your profile's
+`dependencies` (a `link:` spec works), list it in `dsh.profile.bundles`, point
+`node_modules/dsh-sidebar-layout` at this directory, then restart DSH if HMR is disabled.
+There is no build step: `lib/client.js` is a ready-to-load `window.__ModuleLoader__.load({…})` bundle.
+
+Two ways into the settings: **Settings → 侧栏布局** (a page in the settings nav), and the
+three-bar icon at the bottom of the sidebar (same toggles in a popover).
+
+### Design boundaries
+
+- An **additive overlay**: the `sidebar` single slot (`replaceRisk: shadows-shipped-ui`) is never replaced.
+- The list is located by walking up from this plugin's own footer button — no hashed CSS classes, no
+  localized-label matching.
+- If the sidebar cannot be located, the plugin degrades silently: worst case it behaves as if uninstalled.
+- The host's "More"-menu pin state is **not** mirrored (the host exposes no API for it).
+
+### Debug
+
+`window.__dsl.state() / mapping() / nav() / align() / caps() / refresh() / reset()`.
+
+Preferences live in `localStorage['dsh-sidebar-layout:v1']`.
+
+### Self-check
+
+```bash
+node --check lib/client.js
+node test/boot-smoke.mjs
+```
 
 ## License
 
-MIT
+MIT © 2026 Yu-jianhai (余健海)

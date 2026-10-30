@@ -156,6 +156,12 @@ const ReactStub = {
   useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
   useEffect: () => {},
   useRef: (initial) => ({ current: initial === undefined ? null : initial }),
+  Component: class Component {
+    constructor(props) {
+      this.props = props
+    }
+    setState() {}
+  },
 }
 const requireStub = (specifier) => {
   if (specifier === 'react') return ReactStub
@@ -218,8 +224,8 @@ const injected = []
 let disposer = null
 const ctx = {
   slots: {
-    register: (options) => {
-      registered.push(options)
+    register: (options, component) => {
+      registered.push({ ...options, component })
       return () => {}
     },
     inject: (slot, factory) => {
@@ -255,6 +261,52 @@ assert.deepEqual(injected, ['sidebar.footer.action', 'settings.section'], '应�
 assert.equal(registered.length, 2, '应注册底栏按钮 + 设置页')
 assert.deepEqual(registered.map((item) => item.name), ['sidebar.footer.action', 'settings.section'])
 assert.equal(registered[1].order, 70)
+
+// #region 设置页必须真的画出内容（空白页 = 用户眼里的「没有设置界面」）
+const collect = (node, out = { nodes: [], texts: [] }) => {
+  if (Array.isArray(node)) {
+    for (const child of node) collect(child, out)
+    return out
+  }
+  if (!node || typeof node !== 'object') {
+    if (typeof node === 'string' || typeof node === 'number') out.texts.push(String(node))
+    return out
+  }
+  out.nodes.push(node)
+  for (const child of node.children || []) collect(child, out)
+  return out
+}
+
+const SettingsBoundary = registered[1].component
+assert.equal(typeof SettingsBoundary, 'function', '设置页应注册一个组件')
+
+const boundary = new SettingsBoundary({ close: () => {} })
+const sectionTree = boundary.render()
+assert.equal(typeof sectionTree.type, 'function', '错误边界应把渲染交给内部设置页')
+const pageTree = sectionTree.type(sectionTree.props || {})
+const page = collect(pageTree)
+const pageRoot = page.nodes.find((node) => node.props && node.props['data-dsl-settings'] === '1')
+assert.ok(pageRoot, '设置页应渲染出带 data-dsl-settings 的根节点')
+for (const text of ['状态', '入口（拖动排序请直接拖侧栏行尾抓手，这里用 ↑↓）', '显示上限', '紧凑密度', '恢复默认（清空全部偏好）']) {
+  assert.ok(page.texts.includes(text), `设置页缺少分区标题：${text}`)
+}
+assert.ok(page.texts.includes('dsh-context'), '设置页应列出入口 id')
+assert.ok(page.texts.includes('6 / 7 个'), '设置页应显示「当前上限 / 可见入口数」的派生文案')
+assert.ok(
+  page.texts.some((text) => text.startsWith('已检测到 ')),
+  '找到侧栏时状态栏应显示已检测到的入口数',
+)
+
+// 渲染抛错时，必须画出错误文本而不是留空白
+const broken = new SettingsBoundary({})
+broken.state = { error: new Error('boom-from-test') }
+const brokenTree = collect(broken.render())
+assert.ok(
+  brokenTree.nodes.some((node) => node.props && node.props['data-dsl-settings-error'] === '1'),
+  '渲染失败时应显示兜底面板',
+)
+assert.ok(brokenTree.texts.join(' ').includes('boom-from-test'), '兜底面板应包含错误信息')
+// #endregion
 
 // 走一轮 tick（等价于首帧）：应该找到 nav 并把偏好写进 DOM
 timers.forEach((fn) => fn())
