@@ -167,4 +167,4 @@ node test/boot-smoke.mjs
 
 ## License
 
-MIT © 2026 Yu-jianhai (余健海)
+MIT © 2026 Ne_Rn
