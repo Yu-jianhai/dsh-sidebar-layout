@@ -44,9 +44,15 @@ DSH 的左侧栏入口是**固定高度的一整列**，每个入口一行 36px 
 | 排序 | 行内悬浮出现右侧抓手，按住上下拖 | 每行的 CSS `order`（持久化到 localStorage） |
 | 显隐 | 设置 → 侧栏布局 → 逐个勾选，或底栏图标的浮层 | 隐藏的行 `display: none` |
 | 紧凑密度 | 设置里「实验性」开关，行高 36→28px | `nav[data-dsl-density="compact"]` |
+| 拖动表现 | 起拖浮卡跟手、落点画灰块、其余行 FLIP 让位、松手吸附后再落库 | `[data-dsl-drag-card]` / `[data-dsl-drag-ph]` |
+| 占位形态 | 设置 → 拖动效果：实心灰块 / 虚线框 / 幽灵行；可关掉吸附回弹 | `nav[data-dsl-ph]` / `nav[data-dsl-bounce]` |
 
 **不改宿主宽度、不改宿主滚动条**：滚动条样式完全继承宿主（`--dsh-scrollbar-width`，5px），
 插件只做横向对齐补偿，让列表滚动条与会话列表那条落在同一竖线上；拖动手柄的尺寸也不动。
+
+**拖动时看得见落点**：按住抓手拖动时，被拖起的行变成一张跟手的浮卡，原位置留一个灰块标出松手后会落到的位置，
+其余行以 180ms 缓动让位（FLIP），松手时浮卡吸到灰块位置再写库——所以你看到的落点就是最终落点。
+占位可以换成虚线框或幽灵行，也可以关掉吸附回弹；这些只影响观感，不改排序结果，按 Esc 取消会清干净。
 
 **设置页自带兜底**：万一设置页在某个 DSH 版本上渲染失败，页面会画出错误文本与 `__dsl` 排查提示，
 而不是留一片空白——故障可诊断，侧栏本身也不受影响。
@@ -76,6 +82,8 @@ DSH 的左侧栏入口是**固定高度的一整列**，每个入口一行 36px 
 
 - **叠加层，不替换 `sidebar` 单例槽**（该槽 `replaceRisk: shadows-shipped-ui`，替换等于重画整根侧栏，随上游易碎）。
 - 定位靠自己的底栏按钮 `[data-dsl-anchor="1"]` 往上找 `nav`，不依赖 hash 化的 CSS 类名，也不猜中文文案。
+- **拖拽只加表现层，不改排序语义**：行的位置真相仍是 `applyAll()` 写入的 CSS `order`，浮卡与灰块只是视觉；松手先让浮卡吸到灰块位置，再 `persist()` 落库，所以看到的落点就是最终落点，Esc 一律不提交。
+- **与 `dsh-apple-hig` 分工**：会话树（左侧栏下半部分）的拖拽归 apple-hig 负责，一级导航入口（本插件管理的这一列）归本插件负责，两边各管一层，不重复实现排序，也不会互相抢事件。
 - 找不到侧栏就**静默降级**：只注入样式与注册按钮，最坏情况等于没装，不影响侧栏本身。
 - 与官方「更多」菜单里的 pin 状态**不同步**（宿主没有暴露该状态），所以两处的「隐藏」是两套。
 
@@ -133,6 +141,10 @@ which is not persisted, resets on reload, and can never hide the built-in Plugin
   "all N rows", installing another sidebar plugin grows it by one row. A cap you set smaller yourself is
   respected: new entries are appended at the end and stay outside the scroll window.
 - **Compact density (experimental)** — 36px → 28px rows.
+- **Drag feedback** — the dragged row lifts into a card that follows the pointer, a placeholder marks the
+  landing slot, and the other rows make room with a 180ms FLIP. Release snaps the card onto the
+  placeholder *before* the order is written, so the slot you see is the slot you get; Esc cancels cleanly.
+  Placeholder style (solid / dashed / ghost) and the snap bounce are settings, visual only.
 
 ### Install
 

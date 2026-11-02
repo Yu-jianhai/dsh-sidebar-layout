@@ -30,6 +30,13 @@ class FakeEl {
     this.innerHTML = ''
     this.isConnected = options.connected !== false
     this.rect = options.rect || { top: 0, left: 0, width: 180, height: 36, right: 180, bottom: 36 }
+    // 布局度量：拖拽表现层要读 offsetHeight / clientWidth / scrollY
+    this.offsetWidth = this.rect.width
+    this.offsetHeight = this.rect.height
+    this.clientWidth = this.rect.width
+    this.clientHeight = this.rect.height
+    this.scrollTop = 0
+    this.scrollLeft = 0
   }
   setAttribute(name, value) {
     this.attributes[name] = String(value)
@@ -64,6 +71,16 @@ class FakeEl {
   }
   getBoundingClientRect() {
     return this.rect
+  }
+  cloneNode(deep = true) {
+    const copy = new FakeEl(this.tagName, { ...this.attributes }, { rect: { ...this.rect } })
+    copy.style = { ...this.style }
+    copy.dataset = { ...this.dataset }
+    copy.className = this.className
+    if (deep) {
+      this.children.forEach((child) => copy.appendChild(child.cloneNode(true)))
+    }
+    return copy
   }
   contains(node) {
     if (node === this) return true
@@ -110,6 +127,8 @@ const document_ = {
 }
 
 const timers = []
+const timeouts = []
+const windowListeners = new Map()
 const window_ = {
   document: document_,
   innerWidth: 1440,
@@ -119,15 +138,23 @@ const window_ = {
     return timers.length
   },
   clearInterval: () => {},
-  setTimeout: () => 0,
+  setTimeout: (fn) => {
+    timeouts.push(fn)
+    return timeouts.length
+  },
   clearTimeout: () => {},
   requestAnimationFrame: (fn) => {
     fn()
     return 1
   },
   cancelAnimationFrame: () => {},
-  addEventListener: () => {},
-  removeEventListener: () => {},
+  addEventListener: (type, fn) => {
+    windowListeners.set(type, fn)
+  },
+  removeEventListener: (type) => {
+    windowListeners.delete(type)
+  },
+  matchMedia: () => ({ matches: false }),
   __ModuleLoader__: {
     load: (definition) => {
       window_.__def = definition
@@ -147,6 +174,18 @@ globalThis.MutationObserver = class {
 globalThis.ResizeObserver = class {
   observe() {}
   disconnect() {}
+}
+
+globalThis.getComputedStyle = (el) => ({
+  position: (el && el.style && el.style.position) || 'static',
+  overflowY: 'visible',
+  getPropertyValue: () => '',
+})
+
+/** 跑掉排队的一次性定时器（吸附动画的兜底倒计时就走这里） */
+const flushTimeouts = () => {
+  const queued = timeouts.splice(0, timeouts.length)
+  queued.forEach((fn) => fn())
 }
 // #endregion
 
@@ -417,6 +456,108 @@ assert.equal(dsl.state().maxRows, 5, '用户主动设的小窗口不该被自动
 assert.equal(dsl.caps().entries, 9, '新入口计入可见入口数（排在末尾）')
 assert.equal(dsl.caps().limit, 9, '上限随入口数增长')
 assert.equal(nav.dataset.dslCap, '1', '仍然裁剪')
+// #endregion
+
+// #region 拖拽表现层：纯函数 + 偏好回落 + 无残留
+// 让位动画的补偿量：正数表示这一行往上走了，0 表示不需要动
+assert.equal(dsl.flipDelta({ top: 100 }, { top: 80 }), 20, '上移 20px 应补 20px')
+assert.equal(dsl.flipDelta({ top: 80 }, { top: 100 }), -20, '下移 20px 应补 -20px')
+assert.equal(dsl.flipDelta({ top: 100 }, { top: 100.2 }), 0, '亚像素抖动应归零')
+assert.equal(dsl.flipDelta(null, { top: 12 }), 0, '缺一侧数据时不做动画')
+
+// 两个新设置项：合法值保存、非法值回落
+dsl.set({ phStyle: 'dashed', snapBounce: false })
+assert.equal(dsl.state().phStyle, 'dashed', '合法 phStyle 应保存')
+assert.equal(dsl.state().snapBounce, false, '合法 snapBounce 应保存')
+assert.equal(nav.dataset.dslPh, 'dashed', 'phStyle 应同步到 nav 供 CSS 分支')
+assert.equal(nav.dataset.dslBounce, '0', 'snapBounce=false 应同步为 0')
+
+dsl.set({ phStyle: 'rainbow', snapBounce: 'yes' })
+assert.equal(dsl.state().phStyle, 'solid', '非法 phStyle 应回落 solid')
+assert.equal(dsl.state().snapBounce, true, '非布尔 snapBounce 应回落 true')
+assert.equal(nav.dataset.dslPh, 'solid')
+assert.equal(nav.dataset.dslBounce, '1')
+
+// 静止时不该有任何视觉对象残留
+const idleDrag = dsl.drag()
+assert.equal(idleDrag.active, false, '静止时不应处于拖拽状态')
+assert.equal(idleDrag.card, false, '静止时不应有浮卡')
+assert.equal(idleDrag.ph, false, '静止时不应有灰块')
+assert.equal(
+  body.children.filter((el) => el.getAttribute && el.getAttribute('data-dsl-drag-card') === '1').length,
+  0,
+  'body 上不应残留浮卡节点',
+)
+rowEls.forEach((row) => {
+  assert.ok(!row.style.transform, `${row.dataset.dslId} 不应残留 transform`)
+  assert.ok(!row.style.visibility, `${row.dataset.dslId} 不应残留 visibility`)
+})
+// #endregion
+
+// #region 拖拽表现层：真拖一次（浮卡 / 灰块 / 让位 / 吸附落库 / Esc 取消）
+const gripEl = body.children.find((el) => el.getAttribute && el.getAttribute('data-dsl-grip') === '1')
+assert.ok(gripEl, '应创建拖拽抓手')
+const findBody = (attr) => body.children.filter((el) => el.getAttribute && el.getAttribute(attr) === '1')
+const pointerEvent = (extra) => ({
+  button: 0,
+  pointerId: 1,
+  clientX: 20,
+  preventDefault() {},
+  stopPropagation() {},
+  ...extra,
+})
+
+// 先把偏好恢复成「全部入口都显示、宽栏」的干净状态
+dsl.set({ order: [], hidden: [], maxRows: 10, phStyle: 'solid', snapBounce: true })
+nav.offsetWidth = 240
+nav.clientWidth = 235
+dsl.refresh()
+
+const srcRow = rowEls[3] // dsh-context
+nav.listeners.get('pointermove')(pointerEvent({ target: srcRow, clientY: srcRow.rect.top + 18 }))
+assert.equal(gripEl.dataset.on, '1', '悬停行内应让抓手出现在该行旁')
+
+gripEl.listeners.get('pointerdown')(pointerEvent({ clientY: srcRow.rect.top + 18 }))
+assert.equal(typeof windowListeners.get('pointermove'), 'function', '起拖后应挂全局 pointermove')
+
+// 越过 4px 门槛并拖到第一行中线之上
+windowListeners.get('pointermove')(pointerEvent({ clientY: rowEls[0].rect.top + 2 }))
+const during = dsl.drag()
+assert.equal(during.active, true, '越过门槛后应进入拖拽态')
+assert.equal(during.card, true, '应出现浮卡')
+assert.equal(during.ph, true, '应出现灰块')
+assert.equal(findBody('data-dsl-drag-card').length, 1, '浮卡应挂在 body 上')
+const phEl = root.children.find((el) => el.getAttribute && el.getAttribute('data-dsl-drag-ph') === '1')
+assert.ok(phEl, '灰块应挂在 nav 的父容器上')
+assert.equal(nav.children.includes(phEl), false, '灰块不能进 nav 内部（会被当成行）')
+assert.equal(phEl.getAttribute('data-dsl-ph'), 'solid', '灰块形态应跟随设置')
+assert.equal(srcRow.style.visibility, 'hidden', '被拖起的源行用 visibility 隐藏，避免与灰块重影')
+assert.equal(srcRow.style.order, '0', '让位后源行应排到首位')
+
+// 松手：浮卡先吸到落点，落定后才写库
+windowListeners.get('pointerup')(pointerEvent({ clientY: rowEls[0].rect.top + 2 }))
+assert.equal(dsl.drag().settling, true, '松手应先进入吸附')
+assert.equal(dsl.state().order.length, 0, '吸附落定前不应写库')
+flushTimeouts()
+assert.equal(dsl.state().order[0], 'dsh-context', '吸附落定后才落库')
+assert.equal(dsl.drag().card, false, '落库后浮卡应被移除')
+assert.equal(dsl.drag().ph, false, '落库后灰块应被移除')
+assert.equal(findBody('data-dsl-drag-card').length, 0, 'body 上不应残留浮卡')
+assert.equal(root.children.some((el) => el.getAttribute && el.getAttribute('data-dsl-drag-ph') === '1'), false, '灰块应被移除')
+assert.equal(srcRow.style.visibility, '', '源行应恢复可见')
+assert.equal(srcRow.style.transform, '', '行上不应残留 transform')
+
+// Esc 取消：顺序不变、不留残留
+dsl.set({ order: [] })
+nav.listeners.get('pointermove')(pointerEvent({ target: rowEls[1], clientY: rowEls[1].rect.top + 18 }))
+gripEl.listeners.get('pointerdown')(pointerEvent({ clientY: rowEls[1].rect.top + 18 }))
+windowListeners.get('pointermove')(pointerEvent({ clientY: rowEls[4].rect.top + 30 }))
+assert.equal(dsl.drag().active, true, '第二次拖拽应激活')
+windowListeners.get('keydown')({ key: 'Escape', preventDefault() {} })
+flushTimeouts()
+assert.equal(dsl.state().order.length, 0, 'Esc 取消不应提交顺序')
+assert.equal(dsl.drag().card, false, 'Esc 后不应残留浮卡')
+assert.equal(dsl.drag().ph, false, 'Esc 后不应残留灰块')
 // #endregion
 
 // 卸载应还原 DOM

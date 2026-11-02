@@ -1,6 +1,6 @@
 {
   "name": "dsh-sidebar-layout",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "把 DSH 左侧栏的插件入口变成可滚动、可拖动排序、可拖动调高、可逐个显隐的窗口，减少入口对工作区会话列表的挤占。",
   "keywords": [
