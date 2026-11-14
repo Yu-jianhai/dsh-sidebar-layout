@@ -1,6 +1,6 @@
 # 侧栏布局 · dsh-sidebar-layout
 
-[![version](https://img.shields.io/badge/version-0.1.6-blue)](https://github.com/Yu-jianhai/dsh-sidebar-layout/releases)
+[![version](https://img.shields.io/badge/version-0.1.8-blue)](https://github.com/Yu-jianhai/dsh-sidebar-layout/releases)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![platform](https://img.shields.io/badge/DSH-0.2.x-black)](https://github.com/Yu-jianhai)
 
@@ -84,6 +84,8 @@ DSH 的左侧栏入口是**固定高度的一整列**，每个入口一行 36px 
 - 定位靠自己的底栏按钮 `[data-dsl-anchor="1"]` 往上找 `nav`，不依赖 hash 化的 CSS 类名，也不猜中文文案。
 - **拖拽只加表现层，不改排序语义**：行的位置真相仍是 `applyAll()` 写入的 CSS `order`，浮卡与灰块只是视觉；松手先让浮卡吸到灰块位置，再 `persist()` 落库，所以看到的落点就是最终落点，Esc 一律不提交。
 - **与 `dsh-apple-hig` 分工**：会话树（左侧栏下半部分）的拖拽归 apple-hig 负责，一级导航入口（本插件管理的这一列）归本插件负责，两边各管一层，不重复实现排序，也不会互相抢事件。
+- **行结构自适应**：宿主的行容器两代都认——旧版 `nav > button`，现在（2026-11-13 版）是 `nav > div.panelEntry > button[aria-label]`，行内还多一颗「取消固定」按钮。
+  插件把 `order` / `display` 写到 `nav` 的直接子元素上，行高与行间距一律**实测**（新宿主行高 32px，旧版 36px），不写死数值。
 - 找不到侧栏就**静默降级**：只注入样式与注册按钮，最坏情况等于没装，不影响侧栏本身。
 - 与官方「更多」菜单里的 pin 状态**不同步**（宿主没有暴露该状态），所以两处的「隐藏」是两套。
 
@@ -161,6 +163,8 @@ three-bar icon at the bottom of the sidebar (same toggles in a popover).
 - An **additive overlay**: the `sidebar` single slot (`replaceRisk: shadows-shipped-ui`) is never replaced.
 - The list is located by walking up from this plugin's own footer button — no hashed CSS classes, no
   localized-label matching.
+- **Row-shape agnostic**: understands both `nav > button` (older host) and `nav > div.panelEntry > button`
+  (host since 2026-11-13); row height and gap are measured at runtime instead of hard-coded (32px vs 36px).
 - If the sidebar cannot be located, the plugin degrades silently: worst case it behaves as if uninstalled.
 - The host's "More"-menu pin state is **not** mirrored (the host exposes no API for it).
 

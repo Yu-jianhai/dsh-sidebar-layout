@@ -96,6 +96,17 @@ class FakeEl {
     }
     return null
   }
+  querySelectorAll(selector) {
+    const want = String(selector).toUpperCase()
+    const found = []
+    const stack = [...this.children]
+    while (stack.length) {
+      const node = stack.shift()
+      if (node.tagName === want) found.push(node)
+      stack.push(...node.children)
+    }
+    return found
+  }
   closest(selector) {
     let node = this
     const want = String(selector).toUpperCase()
@@ -228,10 +239,19 @@ const PANELS = [
 // #region 组装侧栏 DOM：root > nav > button* + 更多行；root > foot > anchor
 const root = new FakeEl('div', {}, { rect: { top: 0, left: 0, width: 240, height: 900, right: 240, bottom: 900 } })
 const nav = new FakeEl('nav', { 'aria-label': '全局面板' }, { rect: { top: 60, left: 0, width: 240, height: 350, right: 240, bottom: 410 } })
-const rowEls = PANELS.map((panel, index) => {
-  const row = new FakeEl('button', { 'aria-label': panel.label }, { rect: { top: 60 + index * 38, left: 0, width: 216, height: 36, right: 216, bottom: 96 + index * 38 } })
-  nav.appendChild(row)
-  return row
+// 新版宿主（2026-11-13 起）：nav > div.panelEntry > button.panelRow + button.panelUnpin
+const rowEls = []
+const rowButtons = []
+PANELS.forEach((panel, index) => {
+  const top = 60 + index * 38
+  const entry = new FakeEl('div', { class: 'panelEntry' }, { rect: { top, left: 0, width: 216, height: 36, right: 216, bottom: top + 36 } })
+  const btn = new FakeEl('button', { 'aria-label': panel.label }, { rect: { top: top + 2, left: 0, width: 216, height: 32, right: 216, bottom: top + 34 } })
+  const unpin = new FakeEl('button', { 'aria-label': `取消固定 ${panel.label}` }, { rect: { top: top + 2, left: 188, width: 28, height: 28, right: 216, bottom: top + 30 } })
+  entry.appendChild(btn)
+  entry.appendChild(unpin)
+  nav.appendChild(entry)
+  rowEls.push(entry)
+  rowButtons.push(btn)
 })
 const moreRow = new FakeEl('button', { 'aria-haspopup': 'menu', 'aria-label': '更多' }, { rect: { top: 60 + 8 * 38, left: 0, width: 216, height: 36, right: 216, bottom: 96 + 8 * 38 } })
 nav.appendChild(moreRow)
@@ -437,9 +457,10 @@ assert.equal(nav.style.maxHeight, '', '行数 = 入口数时不该设 maxHeight'
 
 // 装一个新插件：窗口自动长高一行（因为之前正好是「全部」）
 PANELS.push({ id: 'dsh-new', order: 90, label: '新入口' })
-const newRow = new FakeEl('button', { 'aria-label': '新入口' }, { rect: { top: 60 + 7 * 38, left: 0, width: 216, height: 36, right: 216, bottom: 96 + 7 * 38 } })
-newRow.parentElement = nav
-nav.children.splice(nav.children.indexOf(moreRow), 0, newRow)
+const newEntry = new FakeEl('div', {}, { rect: { top: 60 + 9 * 38, left: 0, width: 216, height: 36, right: 216, bottom: 96 + 9 * 38 } })
+newEntry.appendChild(new FakeEl('button', { 'aria-label': '新入口' }, { rect: { top: 60 + 7 * 38 + 2, left: 0, width: 216, height: 32, right: 216, bottom: 96 + 7 * 38 } }))
+newEntry.parentElement = nav
+nav.children.splice(nav.children.indexOf(moreRow), 0, newEntry)
 dsl.refresh()
 assert.equal(dsl.state().maxRows, 8, '「全部」状态下新增入口应自动长到 8 行')
 assert.equal(nav.dataset.dslCap, undefined, '自动长高后依然不裁剪')
@@ -448,9 +469,10 @@ assert.equal(nav.dataset.dslCap, undefined, '自动长高后依然不裁剪')
 dsl.set({ maxRows: 5 })
 assert.equal(nav.dataset.dslCap, '1', '5 < 8 → 恢复裁剪')
 PANELS.push({ id: 'dsh-extra', order: 91, label: '再加一个' })
-const extraRow = new FakeEl('button', { 'aria-label': '再加一个' }, { rect: { top: 60 + 8 * 38, left: 0, width: 216, height: 36, right: 216, bottom: 96 + 8 * 38 } })
-extraRow.parentElement = nav
-nav.children.splice(nav.children.indexOf(moreRow), 0, extraRow)
+const extraEntry = new FakeEl('div', {}, { rect: { top: 60 + 10 * 38, left: 0, width: 216, height: 36, right: 216, bottom: 96 + 10 * 38 } })
+extraEntry.appendChild(new FakeEl('button', { 'aria-label': '再加一个' }, { rect: { top: 60 + 8 * 38 + 2, left: 0, width: 216, height: 32, right: 216, bottom: 96 + 8 * 38 } }))
+extraEntry.parentElement = nav
+nav.children.splice(nav.children.indexOf(moreRow), 0, extraEntry)
 dsl.refresh()
 assert.equal(dsl.state().maxRows, 5, '用户主动设的小窗口不该被自动放大')
 assert.equal(dsl.caps().entries, 9, '新入口计入可见入口数（排在末尾）')
@@ -514,8 +536,9 @@ nav.clientWidth = 235
 dsl.refresh()
 
 const srcRow = rowEls[3] // dsh-context
-nav.listeners.get('pointermove')(pointerEvent({ target: srcRow, clientY: srcRow.rect.top + 18 }))
+nav.listeners.get('pointermove')(pointerEvent({ target: rowButtons[3], clientY: srcRow.rect.top + 18 }))
 assert.equal(gripEl.dataset.on, '1', '悬停行内应让抓手出现在该行旁')
+assert.equal(gripEl.style.left, '162px', '抓手要让开行内右侧的「取消固定」按钮（216-24-30）')
 
 gripEl.listeners.get('pointerdown')(pointerEvent({ clientY: srcRow.rect.top + 18 }))
 assert.equal(typeof windowListeners.get('pointermove'), 'function', '起拖后应挂全局 pointermove')
@@ -549,7 +572,7 @@ assert.equal(srcRow.style.transform, '', '行上不应残留 transform')
 
 // Esc 取消：顺序不变、不留残留
 dsl.set({ order: [] })
-nav.listeners.get('pointermove')(pointerEvent({ target: rowEls[1], clientY: rowEls[1].rect.top + 18 }))
+nav.listeners.get('pointermove')(pointerEvent({ target: rowButtons[1], clientY: rowEls[1].rect.top + 18 }))
 gripEl.listeners.get('pointerdown')(pointerEvent({ clientY: rowEls[1].rect.top + 18 }))
 windowListeners.get('pointermove')(pointerEvent({ clientY: rowEls[4].rect.top + 30 }))
 assert.equal(dsl.drag().active, true, '第二次拖拽应激活')
@@ -558,6 +581,22 @@ flushTimeouts()
 assert.equal(dsl.state().order.length, 0, 'Esc 取消不应提交顺序')
 assert.equal(dsl.drag().card, false, 'Esc 后不应残留浮卡')
 assert.equal(dsl.drag().ph, false, 'Esc 后不应残留灰块')
+// #endregion
+
+// #region 向后兼容：旧版 nav 的直接子元素就是 button
+dsl.set({ order: [], hidden: [] })
+const legacyBtn = rowButtons[5]
+const legacyEntry = rowEls[5]
+nav.children.splice(nav.children.indexOf(legacyEntry), 1, legacyBtn)
+legacyBtn.parentElement = nav
+dsl.refresh()
+assert.equal(legacyBtn.style.order, '5', '旧版 button 直接作 nav 子元素时也应写 order')
+assert.equal(legacyBtn.dataset.dslId, 'skill-explorer', '旧版结构也应认出入口 id')
+// 恢复成新版结构，后面的卸载断言仍按包装 div 检查
+nav.children.splice(nav.children.indexOf(legacyBtn), 1, legacyEntry)
+legacyEntry.parentElement = nav
+dsl.refresh()
+assert.equal(legacyEntry.style.order, '5', '换回包装结构后 order 应回到包装 div 上')
 // #endregion
 
 // 卸载应还原 DOM
